@@ -1,0 +1,197 @@
+=== PAGE 1 ===
+ 
+1 
+ 
+Universidad Nacional Abierta y a Distancia 
+Vicerrectoría Académica y de Investigación 
+Guía de aprendizaje para el desarrollo del componente práctico 
+del curso 
+Programación 213023 
+ 
+1. Información general del componente práctico.  
+ 
+Tabla 1. Información general del componente práctico 
+Aspecto 
+Descripción 
+1. Estrategia metodológica 
+Aprendizaje basado en 
+problemas  
+2. Tipología de curso 
+Metodológico 
+3. Momento de la evaluación 
+Intermedio 
+4. Puntaje de la actividad 
+ 
+150 
+5. Número de actividades del 
+componente registradas en 
+esta guía 
+1 
+6. Horas de trabajo 
+independiente del 
+estudiante 
+24 
+7. Horas de acompañamiento 
+docente 
+9 
+8. Tipo de práctica formativa 
+Simulada 
+ 
+2. Con esta actividad de componente práctico se espera que 
+los estudiantes logren y evidencien el siguiente resultado 
+de aprendizaje:  
+ 
+Implementar el manejo de excepciones en el desarrollo de aplicaciones 
+orientadas a objetos buscando estabilidad y robustez, permitiendo una 
+gestión adecuada de errores en el funcionamiento de las soluciones 
+ 
+ 
+
+
+=== PAGE 2 ===
+ 
+2 
+ 
+ 
+3. Descripción general de la(s) actividad(es) del componente 
+práctico.  
+Desarrollar el ejercicio propuesto dentro GitHub, el enlace será 
+compartido en el foro de desarrollo de la actividad.  
+Tabla 2. Información actividad 1 
+Aspecto 
+Descripción 
+1. Escenarios de componente 
+práctico 
+Simulado con apoyo de TIC 
+2. Tipo de actividad 
+Colaborativa 
+3. Número de actividad 
+4 
+4. La actividad inicia el: 
+lunes, 26 de octubre de 2026 
+5. La actividad finaliza el: 
+domingo, 22 de noviembre de 2026 
+ 
+Los recursos con los que debe contar para el desarrollo de la 
+actividad son los siguientes: 
+ 
+• Van Rossum, G., & Drake Jr, F. L. (2024). El tutorial de Python. 
+Python Software Foundation. 
+https://docs.python.org/es/3.12/tutorial/errors.html 
+ 
+• Cuevas Álvarez, A. (2016). Python 3: curso práctico: ( ed.). RA-
+MA Editorial. https://elibro-
+net.bibliotecavirtual.unad.edu.co/es/ereader/unad/106404?page=
+373 (p. 373 – 385) 
+ 
+• Fabrizio Romano, Benjamin Baka, & Dusty Phillips. (2019). Getting 
+Started with Python : Understand Key Data Structures and Use 
+Python in Object-oriented Programming. Packt Publishing. 
+https://research-ebsco-
+com.bibliotecavirtual.unad.edu.co/linkprocessor/plink?id=b41fd66
+a-1134-3dcd-8dba-90f36451f08d 
+ 
+• Zambrano, J. P. (2025). Introducción al uso de GitHub. 
+[Objeto_virtual_de_Informacion_OVI]. Repositorio Institucional 
+UNAD. https://repository.unad.edu.co/handle/10596/75876 
+• Silva, F. D. (2025). Basics of using GitHub.  
+
+
+=== PAGE 3 ===
+ 
+3 
+ 
+[Objeto_virtual_de_Informacion_OVI]. Repositorio Institucional 
+UNAD. https://repository.unad.edu.co/handle/10596/75882 
+ 
+La actividad consiste en: 
+ 
+Cada grupo conformado por cinco (5) estudiantes, y en correspondencia 
+con el proyecto asignado según el Anexo 3 - Problemas a desarrollar 
+Fase 4, deberá desarrollar actividades orientadas a garantizar la 
+estabilidad, robustez y adecuado manejo de errores dentro de la 
+solución propuesta. 
+• 
+Cada estudiante debe ingresar al repositorio creado en GitHub 
+para el proyecto de su grupo. 
+• 
+Posteriormente, deberá iniciar la implementación del código 
+correspondiente o continuar el desarrollo previamente realizado 
+por sus compañeros, asegurándose de documentar cada línea de 
+código de manera clara y precisa. 
+• 
+El estudiante debe ejecutar de forma secuencial cada segmento 
+del código para validar su funcionamiento y aplicar las 
+correcciones necesarias. 
+• 
+La participación activa de todos los integrantes en la elaboración y 
+codificación del proyecto es obligatoria, garantizando así un 
+trabajo colaborativo y coherente con los objetivos de la actividad. 
+ 
+Evidencias de trabajo independiente: 
+En esta actividad no se requieren evidencias de trabajo independiente. 
+ 
+Evidencias de trabajo grupal: 
+Las evidencias de trabajo grupal a entregar son: 
+• Documento en PDF que contenga: 
+o Portada  
+o Introducción 
+o Enlace del repositorio en GitHub 
+o Conclusiones  
+o Referencias bibliográficas normas apa 
+
+
+=== PAGE 4 ===
+ 
+4 
+ 
+ 
+4. Lineamientos generales para la elaboración de las 
+evidencias 
+Para evidencias elaboradas colaborativamente, tenga en cuenta las 
+siguientes orientaciones: 
+• Revisar el apartado de noticias del curso, allí se publicará de forma 
+constante material de apoyo e información fundamental para el 
+desarrollo del curso.  
+• Verificar en el espacio Encuentros sincrónicos vía web conferencia 
+las fechas programadas para el encuentro de cada una de las 
+unidades.  
+• Estar atento a las invitaciones de los CIPAS virtuales que se 
+publicaran en el foro de noticias.  
+Tenga en cuenta que todos los productos escritos independientes o 
+grupales deben cumplir con las normas de ortografía y con las 
+condiciones de presentación que se hayan definido. 
+En cuanto al uso de referencias considere que el producto de esta 
+actividad debe cumplir con las normas Elija un elemento. 
+En cualquier caso, cumpla con las normas de referenciación y evite el 
+plagio académico, para ello puede apoyarse revisando sus productos 
+escritos mediante la herramienta Turnitin que encuentra en el campus 
+virtual.  
+5. Situaciones de orden académico 
+Considere que en el acuerdo 029 del 13 de diciembre de 2013, artículo 
+99, se considera como faltas que atentan contra el orden académico, 
+entre otras, las siguientes: literal e) “El plagiar, es decir, presentar 
+como de su propia autoría la totalidad o parte de una obra, trabajo, 
+documento o invención realizado por otra persona. Implica también el 
+uso de citas o referencias faltas, o proponer citas donde no haya 
+coincidencia entre ella y la referencia” y liberal f) “El reproducir, o copiar 
+con fines de lucro, materiales educativos o resultados de productos de 
+investigación, que cuentan con derechos intelectuales reservados para la 
+Universidad.” 
+Las sanciones académicas a las que se enfrentará el estudiante son las 
+siguientes: 
+
+
+=== PAGE 5 ===
+ 
+5 
+ 
+a) 
+En los casos de fraude académico demostrado en el trabajo 
+académico o evaluación respectiva, la calificación que se impondrá será 
+de cero puntos sin perjuicio de la sanción disciplinaria correspondiente. 
+b) 
+En los casos relacionados con plagio demostrado en el trabajo 
+académico cualquiera sea su naturaleza, la calificación que se impondrá 
+será de cero puntos, sin perjuicio de la sanción disciplinaria 
+correspondiente. 

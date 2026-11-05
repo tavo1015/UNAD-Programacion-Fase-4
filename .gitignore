@@ -1,0 +1,25 @@
+# Claves y credenciales privadas
+github.txt
+*.token
+*.key
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs generados en tiempo de ejecución
+*.log
+software_fj.log
+
+# Entornos virtuales
+venv/
+env/
+ENV/
+.venv/
+
+# Configuración de editores / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
