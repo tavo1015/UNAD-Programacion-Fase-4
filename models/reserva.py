@@ -1,27 +1,34 @@
 # Universidad Nacional Abierta y a Distancia - UNAD
 # Curso: Programacion (Codigo: 213023)
-# Fase 4 - Practicas Simuladas (Software FJ)
-# Modulo: Gestion de Reservas - Desarrollador 4
-# Gestiona clientes, servicios, duracion y estados con excepciones y logs.
+# Fase 4 - Software FJ | Desarrollador 4: Camilo
+# Modulo: Gestion de Reservas y Logica de Negocio
+
+"""Reservas compatibles con la interfaz actual de modelos.servicios.
+
+Dependencias previstas al integrar las ramas del equipo:
+- nucleo.base.EntidadBase
+- nucleo.exceptions.ReservaError
+- nucleo.logger.registrar_info/registrar_advertencia/registrar_error
+- modelos.cliente.Cliente (aun pendiente de entregar)
+- modelos.servicios.Servicio
+
+El servicio calcula el IVA y los recargos; la reserva aplica despues los
+ descuentos comerciales sobre ese total. Este orden debe ser acordado por
+ el equipo si la regla de facturacion cambia.
+"""
 
 from datetime import datetime
 from enum import Enum
 from math import isfinite
 
-from core.base import EntidadBase
-from core.exceptions import (
-    EstadoReservaInvalidoError,
-    ReservaError,
-    OperacionNoPermitidaError,
-)
-from core.logger import registrar_info, registrar_advertencia, registrar_error
-from models.cliente import Cliente
-from models.servicios import Servicio
+from núcleo.base import EntidadBase
+from núcleo.exceptions import ReservaError
+from núcleo.logger import registrar_info, registrar_advertencia, registrar_error
+from modelos.cliente import Cliente
+from modelos.servicios import Servicio
 
 
 class EstadoReserva(Enum):
-    """Estados posibles de una reserva."""
-
     PENDIENTE = "PENDIENTE"
     CONFIRMADA = "CONFIRMADA"
     CANCELADA = "CANCELADA"
@@ -29,222 +36,220 @@ class EstadoReserva(Enum):
 
 
 class Reserva(EntidadBase):
-    """Reserva de un cliente para un servicio de Software FJ.
+    """Asocia un cliente y un servicio y controla el ciclo de su reserva.
 
-    Contrato de integracion con el equipo:
-    - Cliente: propiedades nombre, cedula y es_vip.
-    - Servicio: propiedad nombre y metodo calcular_costo(descuento=..., duracion=..., **kwargs).
-      'duracion' se expresa en unidades acordadas con cada servicio (p. ej. horas).
-    - EntidadBase: constructor id_entidad y propiedad id_entidad/_id_entidad.
-
-    La duracion es obligatoria para reservas nuevas. Se mantiene `notas` como
-    quinto argumento posicional para evitar romper llamadas previas.
+    La duracion se expresa en horas para ReservaSala y en dias para
+    AlquilerEquipo. Si se omite, toma `servicio.horas` o `servicio.dias`.
+    Si se especifica para estos servicios, debe coincidir con el valor del
+    servicio para impedir facturar un periodo distinto al contratado.
     """
 
     def __init__(self, id_reserva: str, cliente: Cliente, servicio: Servicio,
-                 fecha_evento: str, notas: str = "", *, duracion: float = 1.0):
-        super().__init__(id_entidad=id_reserva)
+                 fecha_evento: str, notas: str = "", *, duracion=None):
         try:
+            if not isinstance(id_reserva, str) or not id_reserva.strip():
+                raise ReservaError("El identificador de reserva debe ser texto no vacio.")
             if not isinstance(cliente, Cliente):
                 raise ReservaError("El cliente debe ser una instancia valida de Cliente.")
             if not isinstance(servicio, Servicio):
                 raise ReservaError("El servicio debe ser una instancia valida de Servicio.")
-
-            fecha_validada = self._validar_fecha_evento(fecha_evento)
-            duracion_validada = self._validar_duracion(duracion)
+            fecha = self._validar_fecha_evento(fecha_evento)
+            unidades = self._determinar_duracion(servicio, duracion)
             if notas is not None and not isinstance(notas, str):
                 raise ReservaError("Las notas deben ser texto o None.")
         except ReservaError as error:
-            registrar_error(f"No se pudo crear la reserva [{id_reserva}]", error)
+            registrar_error(f"Creacion de reserva [{id_reserva}] rechazada", error)
             raise
         else:
+            super().__init__(id_entidad=id_reserva.strip())
             self._cliente = cliente
             self._servicio = servicio
-            self._fecha_evento = fecha_validada
-            self._duracion = duracion_validada
+            self._fecha_evento = fecha
+            self._duracion = unidades
             self._notas = (notas or "").strip()
             self._estado = EstadoReserva.PENDIENTE
             self._costo_total = 0.0
-            registrar_info(
-                f"Reserva [{self.id_reserva}] creada en estado PENDIENTE "
-                f"para el cliente {self._cliente.nombre}."
+            registrar_info(f"Reserva [{self.id_reserva}] creada en estado PENDIENTE.")
+
+    @staticmethod
+    def _numero_positivo(valor, descripcion):
+        if isinstance(valor, bool) or not isinstance(valor, (int, float)):
+            raise ReservaError(f"{descripcion} debe ser un numero positivo.")
+        numero = float(valor)
+        if not isfinite(numero) or numero <= 0:
+            raise ReservaError(f"{descripcion} debe ser finito y mayor que cero.")
+        return numero
+
+    @classmethod
+    def _determinar_duracion(cls, servicio, duracion):
+        """Impide divergencias entre duracion de Reserva y horas/dias de Servicio."""
+        duracion_servicio = None
+        for campo in ("horas", "dias"):
+            if hasattr(servicio, campo):
+                duracion_servicio = cls._numero_positivo(
+                    getattr(servicio, campo), f"La duracion del servicio ({campo})"
+                )
+                break
+        if duracion is None:
+            if duracion_servicio is None:
+                raise ReservaError(
+                    "Debe indicar duracion si el servicio no contiene horas o dias."
+                )
+            return duracion_servicio
+        duracion = cls._numero_positivo(duracion, "La duracion de la reserva")
+        if duracion_servicio is not None and duracion != duracion_servicio:
+            raise ReservaError(
+                "La duracion de la reserva debe coincidir con las horas/dias "
+                "definidas en el servicio."
             )
+        return duracion
 
     @staticmethod
-    def _validar_duracion(duracion: float) -> float:
-        """La duracion debe ser numerica, finita y mayor que cero."""
-        if isinstance(duracion, bool) or not isinstance(duracion, (int, float)):
-            raise ReservaError("La duracion debe ser un numero positivo.")
-        valor = float(duracion)
-        if not isfinite(valor) or valor <= 0:
-            raise ReservaError("La duracion debe ser finita y mayor que cero.")
-        return valor
-
-    @staticmethod
-    def _validar_descuento(descuento: float) -> float:
-        """Descuentos expresados como proporcion: 0.10 equivale a 10 %."""
-        if isinstance(descuento, bool) or not isinstance(descuento, (int, float)):
+    def _validar_descuento(valor):
+        if isinstance(valor, bool) or not isinstance(valor, (int, float)):
             raise ReservaError("El descuento debe ser un numero entre 0 y 1.")
-        valor = float(descuento)
+        valor = float(valor)
         if not isfinite(valor) or not 0 <= valor <= 1:
-            raise ReservaError("El descuento debe estar entre 0 y 1 (0 % a 100 %).")
+            raise ReservaError("El descuento debe estar entre 0 y 1.")
         return valor
 
     @staticmethod
-    def _validar_fecha_evento(fecha_str: str) -> str:
-        """Acepta fechas reales en AAAA-MM-DD o DD/MM/AAAA, con hora opcional."""
+    def _validar_fecha_evento(fecha_str):
         if not isinstance(fecha_str, str) or not fecha_str.strip():
             raise ReservaError("La fecha del evento es obligatoria y debe ser texto.")
-
-        cadena = fecha_str.strip()
-        formatos = (
-            "%Y-%m-%d %H:%M", "%Y-%m-%d",
-            "%d/%m/%Y %H:%M", "%d/%m/%Y",
-        )
-        fecha_dt = None
-        for formato in formatos:
+        for formato in ("%Y-%m-%d %H:%M", "%Y-%m-%d", "%d/%m/%Y %H:%M", "%d/%m/%Y"):
             try:
-                fecha_dt = datetime.strptime(cadena, formato)
+                fecha = datetime.strptime(fecha_str.strip(), formato)
                 break
             except ValueError:
                 continue
-        if fecha_dt is None:
-            raise ReservaError(
-                f"La fecha '{fecha_str}' es invalida. Ejemplo: 2026-11-20 09:00."
-            )
-
-        # Regla de negocio original del proyecto, sujeta a acuerdo del equipo.
-        if not 2024 <= fecha_dt.year <= 2035:
-            raise ReservaError(
-                f"El año {fecha_dt.year} esta fuera del rango operativo (2024-2035)."
-            )
-        return fecha_dt.strftime("%Y-%m-%d %H:%M")
+        else:
+            raise ReservaError(f"Fecha invalida: '{fecha_str}'. Ejemplo: 2026-11-20 09:00.")
+        # Regla heredada del archivo original, pendiente de aprobacion del equipo.
+        if not 2024 <= fecha.year <= 2035:
+            raise ReservaError("El año debe estar entre 2024 y 2035.")
+        return fecha.strftime("%Y-%m-%d %H:%M")
 
     @property
-    def id_reserva(self) -> str:
-        return self._id_entidad
+    def id_reserva(self):
+        return self.id_entidad
 
     @property
-    def cliente(self) -> Cliente:
+    def cliente(self):
         return self._cliente
 
     @property
-    def servicio(self) -> Servicio:
+    def servicio(self):
         return self._servicio
 
     @property
-    def estado(self) -> EstadoReserva:
+    def estado(self):
         return self._estado
 
     @property
-    def costo_total(self) -> float:
+    def costo_total(self):
         return self._costo_total
 
     @property
-    def fecha_evento(self) -> str:
+    def fecha_evento(self):
         return self._fecha_evento
 
     @property
-    def duracion(self) -> float:
+    def duracion(self):
         return self._duracion
 
     @property
-    def notas(self) -> str:
+    def notas(self):
         return self._notas
 
-    def confirmar(self, descuento_adicional: float = 0.0, **kwargs) -> float:
-        """Calcula el costo y confirma solo si esta pendiente.
+    def confirmar(self, descuento_adicional: float = 0.0, *, impuesto: float = 0.19) -> float:
+        """Confirma una reserva pendiente y calcula su total.
 
-        El servicio debe admitir `duracion` y `descuento` como argumentos.
-        No se cambia el estado si el calculo produce un error.
+        `calcular_costo(impuesto=...)` es la firma REAL de servicios.py.
+        El descuento comercial se aplica al importe devuelto por el servicio.
         """
         operacion_exitosa = False
         try:
             if self._estado != EstadoReserva.PENDIENTE:
-                raise EstadoReservaInvalidoError(
-                    f"No se puede confirmar [{self.id_reserva}] en estado {self._estado.value}; "
-                    "debe estar PENDIENTE."
-                )
-
-            if "descuento" in kwargs or "duracion" in kwargs:
                 raise ReservaError(
-                    "Use descuento_adicional y la duracion de la reserva; "
-                    "no pase descuento/duracion en kwargs."
+                    f"No se puede confirmar reserva en estado {self._estado.value}.",
+                    codigo_error="ERR_ESTADO_RESERVA",
                 )
+            descuento = self._validar_descuento(descuento_adicional)
+            vip = self._cliente.es_vip
+            if not isinstance(vip, bool):
+                raise ReservaError("La propiedad es_vip debe ser booleana.")
+            descuento += 0.10 if vip else 0.0
+            if descuento > 1:
+                raise ReservaError("El descuento total, incluido VIP, supera el 100 %.")
+            if isinstance(impuesto, bool) or not isinstance(impuesto, (int, float)):
+                raise ReservaError("El impuesto debe ser numerico.")
+            impuesto = float(impuesto)
+            if not isfinite(impuesto) or not 0 <= impuesto <= 1:
+                raise ReservaError("El impuesto debe estar entre 0 y 1.")
 
-            adicional = self._validar_descuento(descuento_adicional)
-            es_vip = self._cliente.es_vip
-            if not isinstance(es_vip, bool):
-                raise ReservaError("La propiedad es_vip del cliente debe ser booleana.")
-            descuento_total = adicional + (0.10 if es_vip else 0.0)
-            if descuento_total > 1:
-                raise ReservaError(
-                    "El descuento total (incluido VIP) no puede superar el 100 %."
-                )
-
-            costo = self._servicio.calcular_costo(
-                duracion=self._duracion, descuento=descuento_total, **kwargs
-            )
-            if isinstance(costo, bool) or not isinstance(costo, (int, float)):
-                raise ReservaError("El costo calculado debe ser un numero.")
-            if not isfinite(float(costo)) or costo < 0:
-                raise ReservaError("El costo calculado no puede ser negativo o infinito.")
-
-            self._costo_total = float(costo)
+            # Duracion ya esta incluida en el calculo del servicio (horas/dias).
+            subtotal_con_impuesto = self._servicio.calcular_costo(impuesto=impuesto)
+            if isinstance(subtotal_con_impuesto, bool) or not isinstance(
+                subtotal_con_impuesto, (int, float)
+            ):
+                raise ReservaError("El servicio devolvio un costo no numerico.")
+            subtotal_con_impuesto = float(subtotal_con_impuesto)
+            if not isfinite(subtotal_con_impuesto) or subtotal_con_impuesto < 0:
+                raise ReservaError("El servicio devolvio un costo invalido.")
+            costo = round(subtotal_con_impuesto * (1 - descuento), 2)
+            self._costo_total = costo
             self._estado = EstadoReserva.CONFIRMADA
             operacion_exitosa = True
-        except (EstadoReservaInvalidoError, ReservaError) as error:
+        except ReservaError as error:
             registrar_error(f"Fallo al confirmar reserva [{self.id_reserva}]", error)
             raise
         except Exception as error:
-            mensaje = f"Error al calcular costo de reserva [{self.id_reserva}]"
-            registrar_error(mensaje, error)
-            raise ReservaError(mensaje) from error
+            registrar_error(f"Error calculando reserva [{self.id_reserva}]", error)
+            raise ReservaError(
+                "No fue posible calcular el costo de la reserva.",
+                codigo_error="ERR_RESERVA_COSTO",
+            ) from error
         else:
             registrar_info(
-                f"Reserva [{self.id_reserva}] confirmada. "
-                f"Costo: ${self._costo_total:,.2f}"
+                f"Reserva [{self.id_reserva}] CONFIRMADA. Total: ${self._costo_total:,.2f}"
             )
             return self._costo_total
         finally:
-            resultado = "EXITOSA" if operacion_exitosa else "FALLIDA"
             registrar_info(
-                f"[AUDITORIA] Confirmacion [{self.id_reserva}]: {resultado}"
+                f"[AUDITORIA] Confirmacion [{self.id_reserva}]: "
+                f"{'EXITOSA' if operacion_exitosa else 'FALLIDA'}"
             )
 
     def cancelar(self, motivo: str = "Solicitud del cliente") -> None:
-        """Cancela una reserva pendiente o confirmada, nunca procesada."""
+        """Permite cancelar reservas pendientes o confirmadas."""
         try:
-            if self._estado == EstadoReserva.CANCELADA:
-                raise EstadoReservaInvalidoError(
-                    f"La reserva [{self.id_reserva}] ya esta CANCELADA."
-                )
-            if self._estado == EstadoReserva.PROCESADA:
-                raise OperacionNoPermitidaError(
-                    f"La reserva [{self.id_reserva}] ya fue PROCESADA."
+            if self._estado in (EstadoReserva.CANCELADA, EstadoReserva.PROCESADA):
+                raise ReservaError(
+                    f"No se puede cancelar reserva en estado {self._estado.value}.",
+                    codigo_error="ERR_ESTADO_RESERVA",
                 )
             if not isinstance(motivo, str) or not motivo.strip():
                 raise ReservaError("El motivo de cancelacion debe ser texto no vacio.")
-
             self._estado = EstadoReserva.CANCELADA
             registrar_advertencia(
                 f"Reserva [{self.id_reserva}] CANCELADA. Motivo: {motivo.strip()}"
             )
-        except (EstadoReservaInvalidoError, OperacionNoPermitidaError, ReservaError) as error:
-            registrar_error(f"Fallo en cancelacion [{self.id_reserva}]", error)
+        except ReservaError as error:
+            registrar_error(f"Fallo al cancelar [{self.id_reserva}]", error)
             raise
 
     def procesar(self) -> None:
-        """Procesa solo reservas previamente confirmadas."""
+        """Solo permite procesar una reserva confirmada."""
         if self._estado != EstadoReserva.CONFIRMADA:
-            error = EstadoReservaInvalidoError(
-                f"No se puede procesar [{self.id_reserva}] en estado {self._estado.value}; "
-                "debe estar CONFIRMADA."
+            error = ReservaError(
+                f"No se puede procesar reserva en estado {self._estado.value}.",
+                codigo_error="ERR_ESTADO_RESERVA",
             )
             registrar_error(f"Fallo al procesar [{self.id_reserva}]", error)
             raise error
         self._estado = EstadoReserva.PROCESADA
-        registrar_info(f"Reserva [{self.id_reserva}] PROCESADA exitosamente.")
+        registrar_info(f"Reserva [{self.id_reserva}] PROCESADA.")
 
     def obtener_detalle(self) -> dict:
         return {
@@ -261,8 +266,8 @@ class Reserva(EntidadBase):
 
     def __str__(self) -> str:
         return (
-            f"Reserva #{self.id_reserva} | Cliente: {self._cliente.nombre} | "
-            f"Servicio: {self._servicio.nombre} | Fecha: {self._fecha_evento} | "
-            f"Duracion: {self._duracion:g} | Estado: {self._estado.value} | "
-            f"Total: ${self._costo_total:,.2f}"
+            f"Reserva #{self.id_reserva} | Cliente: {self.cliente.nombre} | "
+            f"Servicio: {self.servicio.nombre} | Fecha: {self.fecha_evento} | "
+            f"Duracion: {self.duracion:g} | Estado: {self.estado.value} | "
+            f"Total: ${self.costo_total:,.2f}"
         )
