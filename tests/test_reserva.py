@@ -1,4 +1,10 @@
-"""Pruebas independientes con dobles de las clases que entrega el equipo."""
+"""Pruebas unitarias del modulo Camilo usando dobles de las dependencias.
+
+Se reemplazan las clases de otros integrantes por versiones compatibles con
+las firmas compartidas. Las pruebas integradas se ejecutaran cuando las ramas
+servicios, nucleo y cliente se encuentren reunidas.
+"""
+
 import importlib.util
 import sys
 import types
@@ -6,152 +12,192 @@ import unittest
 from pathlib import Path
 
 
-def instalar_simulaciones():
-    core = types.ModuleType("core")
-    core.__path__ = []
-    base = types.ModuleType("core.base")
-    exceptions = types.ModuleType("core.exceptions")
-    logger = types.ModuleType("core.logger")
-    models = types.ModuleType("models")
-    models.__path__ = []
-    cliente = types.ModuleType("models.cliente")
-    servicios = types.ModuleType("models.servicios")
+def preparar_dependencias():
+    nucleo = types.ModuleType("núcleo")
+    nucleo.__path__ = []
+    base = types.ModuleType("núcleo.base")
+    excepciones = types.ModuleType("núcleo.exceptions")
+    registro = types.ModuleType("núcleo.logger")
+    modelos = types.ModuleType("modelos")
+    modelos.__path__ = []
+    cliente_mod = types.ModuleType("modelos.cliente")
+    servicio_mod = types.ModuleType("modelos.servicios")
 
     class EntidadBase:
         def __init__(self, id_entidad):
-            self._id_entidad = id_entidad
+            self._id_entidad = str(id_entidad).strip()
 
         @property
         def id_entidad(self):
             return self._id_entidad
 
     class ReservaError(Exception):
-        pass
-
-    class EstadoReservaInvalidoError(ReservaError):
-        pass
-
-    class OperacionNoPermitidaError(ReservaError):
-        pass
+        def __init__(self, mensaje, codigo_error="ERR_RESERVA"):
+            super().__init__(mensaje)
+            self.codigo_error = codigo_error
 
     class Cliente:
         def __init__(self, vip=False):
-            self.nombre = "Cliente prueba"
-            self.cedula = "12345"
+            self.nombre = "Cliente de prueba"
+            self.cedula = "123456"
             self.es_vip = vip
 
     class Servicio:
-        nombre = "Sala de prueba"
+        def __init__(self, nombre="Servicio", horas=None, dias=None, precio=100):
+            self.nombre = nombre
+            self.precio = precio
+            if horas is not None:
+                self.horas = horas
+            if dias is not None:
+                self.dias = dias
 
-        def calcular_costo(self, *, duracion, descuento, **kwargs):
-            return 100 * duracion * (1 - descuento)
+        def calcular_costo(self, impuesto=0.19):
+            unidades = getattr(self, "horas", getattr(self, "dias", 1))
+            return self.precio * unidades * (1 + impuesto)
 
+    eventos = []
     base.EntidadBase = EntidadBase
-    exceptions.ReservaError = ReservaError
-    exceptions.EstadoReservaInvalidoError = EstadoReservaInvalidoError
-    exceptions.OperacionNoPermitidaError = OperacionNoPermitidaError
-    logger.eventos = []
-    logger.registrar_info = lambda msg: logger.eventos.append(("info", msg))
-    logger.registrar_advertencia = lambda msg: logger.eventos.append(("warning", msg))
-    logger.registrar_error = lambda msg, err: logger.eventos.append(("error", msg))
-    cliente.Cliente = Cliente
-    servicios.Servicio = Servicio
+    excepciones.ReservaError = ReservaError
+    registro.registrar_info = lambda msg: eventos.append(("INFO", msg))
+    registro.registrar_advertencia = lambda msg: eventos.append(("WARN", msg))
+    registro.registrar_error = lambda msg, err=None: eventos.append(("ERROR", msg))
+    cliente_mod.Cliente = Cliente
+    servicio_mod.Servicio = Servicio
     for nombre, modulo in (
-        ("core", core), ("core.base", base), ("core.exceptions", exceptions),
-        ("core.logger", logger), ("models", models),
-        ("models.cliente", cliente), ("models.servicios", servicios)
+        ("núcleo", nucleo), ("núcleo.base", base),
+        ("núcleo.exceptions", excepciones), ("núcleo.logger", registro),
+        ("modelos", modelos), ("modelos.cliente", cliente_mod),
+        ("modelos.servicios", servicio_mod),
     ):
         sys.modules[nombre] = modulo
-    return Cliente, Servicio, exceptions, logger
+    return Cliente, Servicio, ReservaError, eventos
 
 
-Cliente, Servicio, errores, logger = instalar_simulaciones()
-spec = importlib.util.spec_from_file_location("reserva", Path(__file__).with_name("reserva.py"))
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
+Cliente, Servicio, ReservaError, eventos = preparar_dependencias()
+archivo = Path(__file__).resolve().parent.parent / "modelos" / "reserva.py"
+if not archivo.is_file():
+    # Permite ejecutar el test recibido como archivo suelto junto a reserva.py.
+    archivo = Path(__file__).with_name("reserva.py")
+spec = importlib.util.spec_from_file_location("reserva_bajo_prueba", archivo)
+reserva_mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(reserva_mod)
 
 
-class PruebasReserva(unittest.TestCase):
-    def crear(self, **kwargs):
-        return mod.Reserva("R-1", Cliente(), Servicio(), "2026-11-20 09:00", **kwargs)
+class TestReserva(unittest.TestCase):
+    def crear(self, *, servicio=None, cliente=None, duracion=None, fecha="2026-11-20"):
+        return reserva_mod.Reserva(
+            "R-001", cliente or Cliente(),
+            servicio or Servicio("Sala", horas=2), fecha, duracion=duracion,
+        )
 
-    def test_confirmar_y_procesar(self):
-        reserva = self.crear(duracion=2)
-        self.assertEqual(reserva.confirmar(), 200)
-        self.assertEqual(reserva.estado, mod.EstadoReserva.CONFIRMADA)
-        reserva.procesar()
-        self.assertEqual(reserva.estado, mod.EstadoReserva.PROCESADA)
-        self.assertEqual(reserva.obtener_detalle()["duracion"], 2)
+    def test_creacion_toma_horas_del_servicio(self):
+        reserva = self.crear()
+        self.assertEqual(reserva.duracion, 2)
+        self.assertEqual(reserva.estado, reserva_mod.EstadoReserva.PENDIENTE)
+
+    def test_creacion_toma_dias_del_servicio(self):
+        reserva = self.crear(servicio=Servicio("Equipo", dias=3))
+        self.assertEqual(reserva.duracion, 3)
+
+    def test_rechaza_duracion_distinta_del_servicio(self):
+        with self.assertRaises(ReservaError):
+            self.crear(duracion=3)
+
+    def test_rechaza_duracion_invalida(self):
+        for duracion in (0, -1, True, "2", float("nan"), float("inf")):
+            with self.subTest(duracion=duracion):
+                with self.assertRaises(ReservaError):
+                    self.crear(duracion=duracion)
+
+    def test_confirmacion_incluye_iva(self):
+        reserva = self.crear()
+        self.assertAlmostEqual(reserva.confirmar(), 238.0)
+        self.assertEqual(reserva.estado, reserva_mod.EstadoReserva.CONFIRMADA)
+
+    def test_descuento_adicional(self):
+        self.assertAlmostEqual(self.crear().confirmar(0.20), 190.40)
 
     def test_descuento_vip(self):
-        reserva = mod.Reserva("R-2", Cliente(True), Servicio(), "2026-11-20", duracion=3)
-        self.assertAlmostEqual(reserva.confirmar(0.15), 225)
+        self.assertAlmostEqual(self.crear(cliente=Cliente(True)).confirmar(0.15), 178.50)
 
-    def test_descuento_invalido(self):
-        reserva = self.crear()
-        with self.assertRaises(errores.ReservaError):
-            reserva.confirmar(1.1)
-        self.assertEqual(reserva.estado, mod.EstadoReserva.PENDIENTE)
-
-    def test_descuento_vip_excesivo(self):
-        reserva = mod.Reserva("R-2", Cliente(True), Servicio(), "2026-11-20")
-        with self.assertRaises(errores.ReservaError):
+    def test_descuento_excesivo(self):
+        reserva = self.crear(cliente=Cliente(True))
+        with self.assertRaises(ReservaError):
             reserva.confirmar(0.95)
+        self.assertEqual(reserva.estado, reserva_mod.EstadoReserva.PENDIENTE)
+
+    def test_impuesto_invalido(self):
+        reserva = self.crear()
+        with self.assertRaises(ReservaError):
+            reserva.confirmar(impuesto=-0.3)
+
+    def test_no_confirmar_dos_veces(self):
+        reserva = self.crear()
+        reserva.confirmar()
+        with self.assertRaises(ReservaError):
+            reserva.confirmar()
 
     def test_no_confirmar_procesada(self):
         reserva = self.crear()
         reserva.confirmar()
         reserva.procesar()
-        with self.assertRaises(errores.EstadoReservaInvalidoError):
+        with self.assertRaises(ReservaError):
+            reserva.confirmar()
+
+    def test_cancelar_reserva_pendiente(self):
+        reserva = self.crear()
+        reserva.cancelar("Solicitud")
+        self.assertEqual(reserva.estado, reserva_mod.EstadoReserva.CANCELADA)
+
+    def test_no_confirmar_cancelada(self):
+        reserva = self.crear()
+        reserva.cancelar()
+        with self.assertRaises(ReservaError):
             reserva.confirmar()
 
     def test_no_cancelar_procesada(self):
         reserva = self.crear()
         reserva.confirmar()
         reserva.procesar()
-        with self.assertRaises(errores.OperacionNoPermitidaError):
+        with self.assertRaises(ReservaError):
             reserva.cancelar()
 
-    def test_cancelar_pendiente(self):
-        reserva = self.crear()
-        reserva.cancelar("Sin disponibilidad")
-        self.assertEqual(reserva.estado, mod.EstadoReserva.CANCELADA)
-
-    def test_no_confirmar_cancelada(self):
-        reserva = self.crear()
-        reserva.cancelar()
-        with self.assertRaises(errores.EstadoReservaInvalidoError):
-            reserva.confirmar()
-
-    def test_duracion_invalida(self):
-        for duracion in (0, -2, float("nan"), float("inf"), True, "2"):
-            with self.subTest(duracion=duracion):
-                with self.assertRaises(errores.ReservaError):
-                    self.crear(duracion=duracion)
-
-    def test_fecha_invalida(self):
-        with self.assertRaises(errores.ReservaError):
-            mod.Reserva("R-3", Cliente(), Servicio(), "2026-02-30")
-
-    def test_procesamiento_sin_confirmar(self):
-        with self.assertRaises(errores.EstadoReservaInvalidoError):
+    def test_no_procesar_pendiente(self):
+        with self.assertRaises(ReservaError):
             self.crear().procesar()
 
-    def test_costo_invalido_no_altera_estado(self):
-        servicio = Servicio()
-        servicio.calcular_costo = lambda **kw: -20
-        reserva = mod.Reserva("R-5", Cliente(), servicio, "2026-11-20")
-        with self.assertRaises(errores.ReservaError):
-            reserva.confirmar()
-        self.assertEqual(reserva.estado, mod.EstadoReserva.PENDIENTE)
+    def test_proceso_completo(self):
+        reserva = self.crear()
+        reserva.confirmar()
+        reserva.procesar()
+        self.assertEqual(reserva.estado, reserva_mod.EstadoReserva.PROCESADA)
+        self.assertEqual(reserva.obtener_detalle()["duracion"], 2)
 
-    def test_error_servicio_encadenado(self):
-        servicio = Servicio()
-        servicio.calcular_costo = lambda **kw: 1 / 0
-        reserva = mod.Reserva("R-6", Cliente(), servicio, "2026-11-20")
-        with self.assertRaises(errores.ReservaError) as ctx:
+    def test_fecha_invalida(self):
+        with self.assertRaises(ReservaError):
+            self.crear(fecha="2026-02-30")
+
+    def test_costo_negativo_no_confirma(self):
+        servicio = Servicio("Sala", horas=2)
+        servicio.calcular_costo = lambda impuesto=0.19: -5
+        reserva = self.crear(servicio=servicio)
+        with self.assertRaises(ReservaError):
+            reserva.confirmar()
+        self.assertEqual(reserva.estado, reserva_mod.EstadoReserva.PENDIENTE)
+
+    def test_error_costo_encadenado(self):
+        servicio = Servicio("Sala", horas=2)
+        servicio.calcular_costo = lambda impuesto=0.19: 1 / 0
+        reserva = self.crear(servicio=servicio)
+        with self.assertRaises(ReservaError) as ctx:
             reserva.confirmar()
         self.assertIsInstance(ctx.exception.__cause__, ZeroDivisionError)
+        self.assertEqual(reserva.estado, reserva_mod.EstadoReserva.PENDIENTE)
+
+    def test_registra_auditoria_finally(self):
+        eventos.clear()
+        self.crear().confirmar()
+        self.assertTrue(any("AUDITORIA" in mensaje for _, mensaje in eventos))
 
 
 if __name__ == "__main__":
