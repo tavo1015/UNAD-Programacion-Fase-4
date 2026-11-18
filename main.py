@@ -8,11 +8,10 @@ import os
 import sys
 
 # Agregar la raiz del proyecto al PYTHONPATH para ejecucion directa
-RAIZ_PROYECTO = os.path.dirname(os.path.abspath(__file__))
-if RAIZ_PROYECTO not in sys.path:
-    sys.path.insert(0, RAIZ_PROYECTO)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-ARCHIVO_LOG = os.path.join(RAIZ_PROYECTO, "software_fj.log")
+from tests.simulador import ejecutar_simulacion_completa
+from core.logger import ARCHIVO_LOG
 
 
 def mostrar_encabezado():
@@ -25,19 +24,10 @@ def mostrar_encabezado():
     print("=" * 80)
 
 
-def ejecutar_simulacion():
-    """Invoca la suite de simulacion cuando el modulo tests.simulador esta integrado."""
-    try:
-        from tests.simulador import ejecutar_simulacion_completa
-        ejecutar_simulacion_completa()
-    except ImportError as e:
-        print(f"\n[AVISO] Modulo de simulacion pendiente de integracion completa: {e}\n")
-
-
 def ver_ultimos_logs():
     """Muestra las ultimas lineas registradas en software_fj.log."""
     if not os.path.exists(ARCHIVO_LOG):
-        print(f"\n[AVISO] El archivo '{ARCHIVO_LOG}' aun no existe.\n")
+        print(f"\n[AVISO] El archivo '{ARCHIVO_LOG}' aun no existe. Ejecute la simulacion primero.\n")
         return
 
     print("\n" + "-" * 80)
@@ -46,6 +36,7 @@ def ver_ultimos_logs():
     try:
         with open(ARCHIVO_LOG, "r", encoding="utf-8") as f:
             lineas = f.readlines()
+            # Muestra las ultimas 20 lineas
             ultimas = lineas[-20:] if len(lineas) > 20 else lineas
             for linea in ultimas:
                 print(linea.rstrip())
@@ -55,7 +46,7 @@ def ver_ultimos_logs():
 
 
 def menu_principal():
-    """Menu interactivo de consola para navegacion del usuario o tutor."""
+    """Menu interactivo de consola para navegacion del tutor o evaluador."""
     while True:
         mostrar_encabezado()
         print(" MODO CONSOLA / CLI")
@@ -68,7 +59,7 @@ def menu_principal():
         opcion = input(" Seleccione una opcion (1-4): ").strip()
 
         if opcion == "1":
-            ejecutar_simulacion()
+            ejecutar_simulacion_completa()
             input("\nPresione ENTER para volver al menu principal...")
         elif opcion == "2":
             ver_ultimos_logs()
@@ -77,7 +68,7 @@ def menu_principal():
             print("\nIniciando Interfaz Grafica (Tkinter)...")
             lanzar_interfaz_grafica()
         elif opcion == "4":
-            print("\nGracias por utilizar el Sistema Integral de Software FJ.\n")
+            print("\nGracias por utilizar el Sistema Integral de Software FJ. ¡Hasta pronto!\n")
             break
         else:
             print("\n[ALERTA] Opcion invalida. Por favor digite una opcion valida (1-4).\n")
@@ -90,7 +81,7 @@ def mostrar_ayuda():
     print("   python main.py             -> Inicia la Interfaz Grafica Tkinter (Modo Predeterminado)")
     print("   python main.py --cli       -> Inicia el Menu Interactivo de Consola")
     print("   python main.py --consola   -> Inicia el Menu Interactivo de Consola")
-    print("   python main.py --sim       -> Ejecuta la suite de simulacion")
+    print("   python main.py --sim       -> Ejecuta directamente la suite de simulacion")
     print("   python main.py --ayuda     -> Muestra este mensaje de ayuda")
     print("=" * 80 + "\n")
 
@@ -116,8 +107,9 @@ def main():
         menu_principal()
     elif any(arg in argumentos for arg in ["--sim", "--simulacion", "-s"]):
         mostrar_encabezado()
-        ejecutar_simulacion()
+        ejecutar_simulacion_completa()
     else:
+        # Por defecto (sin argumentos o con --gui): inicia la Interfaz Grafica
         lanzar_interfaz_grafica()
 
 
