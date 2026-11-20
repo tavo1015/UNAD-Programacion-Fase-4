@@ -4,7 +4,7 @@
 # Modulo: Servicios Especializados
 # Descripcion: Implementa la clase abstracta Servicio y tres servicios especializados:
 # 1. ReservaSala, 2. AlquilerEquipo, 3. AsesoriaEspecializada.
-# Incorpora sobrecarga de metodos y registro de eventos en el logger del sistema.
+# Aplica principios de Abstraccion, Herencia, Polimorfismo y Sobrecarga de metodos.
 
 from abc import abstractmethod
 from core.base import EntidadBase
@@ -19,18 +19,25 @@ from core.logger import registrar_info
 class Servicio(EntidadBase):
     """
     Clase abstracta que modela cualquier servicio ofrecido por Software FJ.
-    Define el contrato obligatorio para validar_parametros(), calcular_costo()
-    y describir_servicio().
+    Define el contrato obligatorio para los metodos polimorficos:
+    calcular_costo(), describir_servicio() y validar_parametros().
     """
 
     def __init__(self, codigo_servicio: str, nombre: str, tarifa_base: float):
+        # Invocacion a la clase abstracta base con el codigo como id unico
         super().__init__(id_entidad=codigo_servicio)
 
+        # Validacion del nombre del servicio
         if not nombre or len(str(nombre).strip()) < 3:
             raise ParametroInvalidoError("El nombre del servicio debe contener al menos 3 caracteres.")
 
+        # Validacion de tarifa base no negativa y rango realista comercial
         if not isinstance(tarifa_base, (int, float)) or tarifa_base <= 0:
             raise ParametroInvalidoError("La tarifa base del servicio debe ser un valor positivo mayor a cero.")
+        if tarifa_base > 50000000.0:  # Limite de 50 millones COP
+            raise ParametroInvalidoError(
+                f"La tarifa base (${tarifa_base:,.2f} COP) excede el limite maximo comercial permitido ($50,000,000 COP)."
+            )
 
         self._codigo_servicio = str(codigo_servicio).strip().upper()
         self._nombre = str(nombre).strip()
@@ -56,17 +63,20 @@ class Servicio(EntidadBase):
     # -------------------------------------------------------------------------
     @abstractmethod
     def validar_parametros(self):
-        """Valida que los parametros particulares del servicio sean consistentes."""
+        """Valida que los parametros particulares de la especialidad sean consistentes."""
         pass
 
     @abstractmethod
     def calcular_costo(self, descuento: float = 0.0, impuesto: float = 0.19, **kwargs) -> float:
-        """Calcula el costo final con descuentos, impuestos y parametros opcionales."""
+        """
+        Metodo polimorfico sobrecargado mediante argumentos nombrados y opcionales
+        para calcular el costo final con descuentos e impuestos.
+        """
         pass
 
     @abstractmethod
     def describir_servicio(self) -> str:
-        """Retorna una descripcion detallada del servicio."""
+        """Retorna una descripcion detallada y estructurada del servicio."""
         pass
 
     def obtener_detalle(self) -> dict:
@@ -86,7 +96,7 @@ class Servicio(EntidadBase):
 class ReservaSala(Servicio):
     """
     Gestiona la reserva de salas ejecutivas, conferencias y talleres.
-    Incorpora sobrecarga de parametros para horas extra y descuentos.
+    Sobrescribe el calculo de costos incorporando horas, proyector y refrigerios.
     """
 
     def __init__(self, codigo_servicio: str, nombre: str, tarifa_base_hora: float,
@@ -98,30 +108,48 @@ class ReservaSala(Servicio):
         self.incluye_proyector = bool(incluye_proyector)
         self.incluye_refrigerio = bool(incluye_refrigerio)
 
+        # Validacion inmediata al instanciar
         self.validar_parametros()
         registrar_info(f"Servicio de Sala '{self.nombre}' configurado correctamente.")
 
     def validar_parametros(self):
-        """Valida que horas y capacidad sean positivos."""
-        if self.horas <= 0:
+        """Valida horas y capacidad dentro de limites realistas de aforo y horario."""
+        if not isinstance(self.horas, int) or self.horas <= 0:
             raise ParametroInvalidoError(f"Las horas de sala ({self.horas}) deben ser un entero positivo.")
-        if self.capacidad_maxima <= 0:
+        if self.horas > 72:
+            raise ParametroInvalidoError(f"Las horas de sala ({self.horas}) no pueden exceder 72 horas continuas (3 dias).")
+        if not isinstance(self.capacidad_maxima, int) or self.capacidad_maxima <= 0:
             raise ParametroInvalidoError(f"La capacidad maxima ({self.capacidad_maxima}) debe ser mayor a cero.")
+        if self.capacidad_maxima > 500:
+            raise ParametroInvalidoError(
+                f"La capacidad de la sala ({self.capacidad_maxima} personas) excede el aforo maximo comercial de 500 personas."
+            )
 
+    # Sobrecarga con parametros opcionales: horas_extra
     def calcular_costo(self, descuento: float = 0.0, impuesto: float = 0.19, horas_extra: int = 0) -> float:
-        """Calcula el costo total de la sala aplicando horas extra, descuento e IVA."""
+        """
+        Calcula el costo total de la sala aplicando sobrecarga de parametros.
+        Permite extender horas con costo adicional y aplicar descuentos e IVA.
+        """
         if horas_extra < 0:
             raise ParametroInvalidoError("Las horas extra no pueden ser negativas.")
+        if horas_extra > 24:
+            raise ParametroInvalidoError(f"Las horas extra ({horas_extra}) no pueden superar 24 horas por evento.")
 
         total_horas = self.horas + horas_extra
         subtotal = self.tarifa_base * total_horas
 
+        # Adicionales de sala
         if self.incluye_proyector:
-            subtotal += 25000.0
+            subtotal += 25000.0  # Costo fijo de proyector
         if self.incluye_refrigerio:
-            subtotal += (15000.0 * self.capacidad_maxima)
+            subtotal += (15000.0 * self.capacidad_maxima)  # Costo por persona
 
-        subtotal_con_descuento = subtotal * (1.0 - descuento)
+        # Aplicacion de descuento (validado entre 0 y 1)
+        descuento_aplicado = min(max(descuento, 0.0), 1.0)
+        subtotal_con_descuento = subtotal * (1.0 - descuento_aplicado)
+
+        # Aplicacion de impuesto (IVA)
         costo_final = subtotal_con_descuento * (1.0 + impuesto)
         return round(costo_final, 2)
 
@@ -138,8 +166,8 @@ class ReservaSala(Servicio):
 
 class AlquilerEquipo(Servicio):
     """
-    Gestiona el arrendamiento de equipos tecnologicos.
-    Incorpora recargo por entrega express mediante sobrecarga de metodos.
+    Gestiona el arrendamiento de computadores portatiles, servidores o estaciones.
+    Sobrescribe el calculo de costos segun dias, cantidad y cobertura de seguro.
     """
 
     TIPOS_PERMITIDOS = ["Laptop", "Servidor", "Workstation", "Proyector"]
@@ -156,27 +184,40 @@ class AlquilerEquipo(Servicio):
         registrar_info(f"Servicio de Alquiler '{self.nombre}' ({self.tipo_equipo}) configurado.")
 
     def validar_parametros(self):
-        """Valida tipo de equipo, dias y cantidad."""
+        """Valida que los dias y la cantidad sean mayores a cero y el tipo sea reconocido."""
         if self.tipo_equipo not in self.TIPOS_PERMITIDOS:
             raise ParametroInvalidoError(
                 f"Tipo de equipo '{self.tipo_equipo}' no reconocido. Permitidos: {', '.join(self.TIPOS_PERMITIDOS)}"
             )
-        if self.dias <= 0:
+        if not isinstance(self.dias, int) or self.dias <= 0:
             raise ParametroInvalidoError(f"Los dias de alquiler ({self.dias}) deben ser mayores a cero.")
-        if self.cantidad <= 0:
+        if self.dias > 365:
+            raise ParametroInvalidoError(f"El periodo de alquiler ({self.dias} dias) no puede superar 365 dias (1 año).")
+        if not isinstance(self.cantidad, int) or self.cantidad <= 0:
             raise ParametroInvalidoError(f"La cantidad de equipos ({self.cantidad}) debe ser mayor a cero.")
+        if self.cantidad > 200:
+            raise ParametroInvalidoError(
+                f"La cantidad de equipos solicitada ({self.cantidad}) excede el inventario maximo disponible (200 unidades)."
+            )
 
+    # Sobrecarga con parametros opcionales: entrega_express
     def calcular_costo(self, descuento: float = 0.0, impuesto: float = 0.19, entrega_express: bool = False) -> float:
-        """Calcula el valor del alquiler con seguro, entrega express, descuento e IVA."""
+        """
+        Calcula el valor del alquiler considerando dias, seguro y logistica express.
+        """
         subtotal = self.tarifa_base * self.dias * self.cantidad
 
+        # Seguro contra daños y robo (10% sobre la base de alquiler)
         if self.incluye_seguro:
             subtotal += (subtotal * 0.10)
 
+        # Recargo por logistica de entrega express el mismo dia
         if entrega_express:
             subtotal += 40000.0
 
-        subtotal_con_descuento = subtotal * (1.0 - descuento)
+        # Descuentos e impuestos
+        descuento_aplicado = min(max(descuento, 0.0), 1.0)
+        subtotal_con_descuento = subtotal * (1.0 - descuento_aplicado)
         costo_final = subtotal_con_descuento * (1.0 + impuesto)
         return round(costo_final, 2)
 
@@ -192,7 +233,8 @@ class AlquilerEquipo(Servicio):
 
 class AsesoriaEspecializada(Servicio):
     """
-    Gestiona servicios de consultoria tecnica segun nivel del consultor y modalidad.
+    Gestiona servicios de consultoria tecnica (Ciberseguridad, Cloud, DevOps, IA).
+    Sobrescribe el calculo segun nivel del consultor y modalidad.
     """
 
     MULTIPLICADORES_NIVEL = {
@@ -220,21 +262,32 @@ class AsesoriaEspecializada(Servicio):
             raise ParametroInvalidoError(
                 f"Nivel de consultor '{self.nivel_consultor}' no valido. Disponibles: {niveles}"
             )
-        if self.horas <= 0:
+        if not isinstance(self.horas, int) or self.horas <= 0:
             raise ParametroInvalidoError(f"Las horas de asesoria ({self.horas}) deben ser mayores a cero.")
+        if self.horas > 240:
+            raise ParametroInvalidoError(
+                f"Las horas de consultoria ({self.horas}) exceden el cupo maximo mensual permitido de 240 horas."
+            )
 
+    # Sobrecarga con parametros opcionales: sesion_urgente
     def calcular_costo(self, descuento: float = 0.0, impuesto: float = 0.19, sesion_urgente: bool = False) -> float:
-        """Calcula la tarifa segun nivel del consultor, viaticos y recargo por urgencia."""
+        """
+        Calcula la tarifa considerando la jerarquia del consultor y desplazamiento.
+        """
         factor_nivel = self.MULTIPLICADORES_NIVEL[self.nivel_consultor]
-        subtotal = (self.tarifa_base * factor_nivel) * self.horas
+        tarifa_real_hora = self.tarifa_base * factor_nivel
+        subtotal = tarifa_real_hora * self.horas
 
+        # Viaticos de traslado si es presencial
         if self.modalidad_presencial:
             subtotal += 50000.0
 
+        # Recargo por atencion fuera de horario laboral / urgente
         if sesion_urgente:
             subtotal += (subtotal * 0.25)
 
-        subtotal_con_descuento = subtotal * (1.0 - descuento)
+        descuento_aplicado = min(max(descuento, 0.0), 1.0)
+        subtotal_con_descuento = subtotal * (1.0 - descuento_aplicado)
         costo_final = subtotal_con_descuento * (1.0 + impuesto)
         return round(costo_final, 2)
 
