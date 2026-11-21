@@ -1,273 +1,242 @@
 # Universidad Nacional Abierta y a Distancia - UNAD
-# Curso: Programacion (Codigo: 213023)
-# Fase 4 - Software FJ | Desarrollador 4: Camilo
-# Modulo: Gestion de Reservas y Logica de Negocio
+# Curso: Programación (Código: 213023)
+# Fase 4 - Prácticas Simuladas (Software FJ)
+# Módulo: Pruebas unitarias de reservas (Desarrollador 4 - Camilo)
+"""Pruebas de Reserva con soporte para una rama de desarrollo aislada.
 
-"""Reservas compatibles con la interfaz actual de modelos.servicios.
-
-Dependencias previstas al integrar las ramas del equipo:
-- nucleo.base.EntidadBase
-- nucleo.exceptions.ReservaError
-- nucleo.logger.registrar_info/registrar_advertencia/registrar_error
-- modelos.cliente.Cliente (aun pendiente de entregar)
-- modelos.servicios.Servicio
-
-El servicio calcula el IVA y los recargos; la reserva aplica despues los
-descuentos comerciales sobre ese total. Este orden debe ser acordado por
- el equipo si la regla de facturacion cambia.
+Ubicar este archivo en la carpeta tests/ del proyecto, junto a models/ y core/.
+Si faltan los módulos de otros integrantes, se utilizan dobles mínimos.
+El módulo models.reserva siempre debe ser el módulo REAL que se está probando.
 """
 
-from datetime import datetime
-from enum import Enum
-from math import isfinite
+from datetime import datetime, timedelta
+from pathlib import Path
+import sys
+import types
+import unittest
 
-from núcleo.base import EntidadBase
-from núcleo.exceptions import ReservaError
-from núcleo.logger import registrar_info, registrar_advertencia, registrar_error
-from modelos.cliente import Cliente
-from modelos.servicios import Servicio
-
-
-class EstadoReserva(Enum):
-    PENDIENTE = "PENDIENTE"
-    CONFIRMADA = "CONFIRMADA"
-    CANCELADA = "CANCELADA"
-    PROCESADA = "PROCESADA"
+RAIZ_PROYECTO = Path(__file__).resolve().parent.parent
+if not (RAIZ_PROYECTO / "models" / "reserva.py").is_file():
+    # Permite ejecutar el archivo temporalmente desde la raíz del proyecto.
+    RAIZ_PROYECTO = Path(__file__).resolve().parent
+if str(RAIZ_PROYECTO) not in sys.path:
+    sys.path.insert(0, str(RAIZ_PROYECTO))
 
 
-class Reserva(EntidadBase):
-    """Asocia un cliente y un servicio y controla el ciclo de su reserva.
+def _asegurar_dependencias_en_rama_aislada():
+    """Instala dobles solo si falta el conjunto de dependencias externas.
 
-    La duracion se expresa en horas para ReservaSala y en dias para
-    AlquilerEquipo. Si se omite, toma `servicio.horas` o `servicio.dias`.
-    Si se especifica para estos servicios, debe coincidir con el valor del
-    servicio para impedir facturar un periodo distinto al contratado.
+    Nunca reemplaza models.reserva, que debe existir en el proyecto.
     """
-
-    def __init__(self, id_reserva: str, cliente: Cliente, servicio: Servicio,
-                 fecha_evento: str, notas: str = "", *, duracion=None):
-        try:
-            if not isinstance(id_reserva, str) or not id_reserva.strip():
-                raise ReservaError("El identificador de reserva debe ser texto no vacio.")
-            if not isinstance(cliente, Cliente):
-                raise ReservaError("El cliente debe ser una instancia valida de Cliente.")
-            if not isinstance(servicio, Servicio):
-                raise ReservaError("El servicio debe ser una instancia valida de Servicio.")
-            fecha = self._validar_fecha_evento(fecha_evento)
-            unidades = self._determinar_duracion(servicio, duracion)
-            if notas is not None and not isinstance(notas, str):
-                raise ReservaError("Las notas deben ser texto o None.")
-        except ReservaError as error:
-            registrar_error(f"Creacion de reserva [{id_reserva}] rechazada", error)
-            raise
-        else:
-            super().__init__(id_entidad=id_reserva.strip())
-            self._cliente = cliente
-            self._servicio = servicio
-            self._fecha_evento = fecha
-            self._duracion = unidades
-            self._notas = (notas or "").strip()
-            self._estado = EstadoReserva.PENDIENTE
-            self._costo_total = 0.0
-            registrar_info(f"Reserva [{self.id_reserva}] creada en estado PENDIENTE.")
-
-    @staticmethod
-    def _numero_positivo(valor, descripcion):
-        if isinstance(valor, bool) or not isinstance(valor, (int, float)):
-            raise ReservaError(f"{descripcion} debe ser un numero positivo.")
-        numero = float(valor)
-        if not isfinite(numero) or numero <= 0:
-            raise ReservaError(f"{descripcion} debe ser finito y mayor que cero.")
-        return numero
-
-    @classmethod
-    def _determinar_duracion(cls, servicio, duracion):
-        """Impide divergencias entre duracion de Reserva y horas/dias de Servicio."""
-        duracion_servicio = None
-        for campo in ("horas", "dias"):
-            if hasattr(servicio, campo):
-                duracion_servicio = cls._numero_positivo(
-                    getattr(servicio, campo), f"La duracion del servicio ({campo})"
-                )
-                break
-        if duracion is None:
-            if duracion_servicio is None:
-                raise ReservaError(
-                    "Debe indicar duracion si el servicio no contiene horas o dias."
-                )
-            return duracion_servicio
-        duracion = cls._numero_positivo(duracion, "La duracion de la reserva")
-        if duracion_servicio is not None and duracion != duracion_servicio:
-            raise ReservaError(
-                "La duracion de la reserva debe coincidir con las horas/dias "
-                "definidas en el servicio."
-            )
-        return duracion
-
-    @staticmethod
-    def _validar_descuento(valor):
-        if isinstance(valor, bool) or not isinstance(valor, (int, float)):
-            raise ReservaError("El descuento debe ser un numero entre 0 y 1.")
-        valor = float(valor)
-        if not isfinite(valor) or not 0 <= valor <= 1:
-            raise ReservaError("El descuento debe estar entre 0 y 1.")
-        return valor
-
-    @staticmethod
-    def _validar_fecha_evento(fecha_str):
-        if not isinstance(fecha_str, str) or not fecha_str.strip():
-            raise ReservaError("La fecha del evento es obligatoria y debe ser texto.")
-        for formato in ("%Y-%m-%d %H:%M", "%Y-%m-%d", "%d/%m/%Y %H:%M", "%d/%m/%Y"):
-            try:
-                fecha = datetime.strptime(fecha_str.strip(), formato)
-                break
-            except ValueError:
-                continue
-        else:
-            raise ReservaError(f"Fecha invalida: '{fecha_str}'. Ejemplo: 2026-11-20 09:00.")
-        # Regla heredada del archivo original, pendiente de aprobacion del equipo.
-        if not 2024 <= fecha.year <= 2035:
-            raise ReservaError("El año debe estar entre 2024 y 2035.")
-        return fecha.strftime("%Y-%m-%d %H:%M")
-
-    @property
-    def id_reserva(self):
-        return self.id_entidad
-
-    @property
-    def cliente(self):
-        return self._cliente
-
-    @property
-    def servicio(self):
-        return self._servicio
-
-    @property
-    def estado(self):
-        return self._estado
-
-    @property
-    def costo_total(self):
-        return self._costo_total
-
-    @property
-    def fecha_evento(self):
-        return self._fecha_evento
-
-    @property
-    def duracion(self):
-        return self._duracion
-
-    @property
-    def notas(self):
-        return self._notas
-
-    def confirmar(self, descuento_adicional: float = 0.0, *, impuesto: float = 0.19) -> float:
-        """Confirma una reserva pendiente y calcula su total.
-
-        `calcular_costo(impuesto=...)` es la firma REAL de servicios.py.
-        El descuento comercial se aplica al importe devuelto por el servicio.
-        """
-        operacion_exitosa = False
-        try:
-            if self._estado != EstadoReserva.PENDIENTE:
-                raise ReservaError(
-                    f"No se puede confirmar reserva en estado {self._estado.value}.",
-                    codigo_error="ERR_ESTADO_RESERVA",
-                )
-            descuento = self._validar_descuento(descuento_adicional)
-            vip = self._cliente.es_vip
-            if not isinstance(vip, bool):
-                raise ReservaError("La propiedad es_vip debe ser booleana.")
-            descuento += 0.10 if vip else 0.0
-            if descuento > 1:
-                raise ReservaError("El descuento total, incluido VIP, supera el 100 %.")
-            if isinstance(impuesto, bool) or not isinstance(impuesto, (int, float)):
-                raise ReservaError("El impuesto debe ser numerico.")
-            impuesto = float(impuesto)
-            if not isfinite(impuesto) or not 0 <= impuesto <= 1:
-                raise ReservaError("El impuesto debe estar entre 0 y 1.")
-
-            # Duracion ya esta incluida en el calculo del servicio (horas/dias).
-            subtotal_con_impuesto = self._servicio.calcular_costo(impuesto=impuesto)
-            if isinstance(subtotal_con_impuesto, bool) or not isinstance(
-                subtotal_con_impuesto, (int, float)
-            ):
-                raise ReservaError("El servicio devolvio un costo no numerico.")
-            subtotal_con_impuesto = float(subtotal_con_impuesto)
-            if not isfinite(subtotal_con_impuesto) or subtotal_con_impuesto < 0:
-                raise ReservaError("El servicio devolvio un costo invalido.")
-            costo = round(subtotal_con_impuesto * (1 - descuento), 2)
-            self._costo_total = costo
-            self._estado = EstadoReserva.CONFIRMADA
-            operacion_exitosa = True
-        except ReservaError as error:
-            registrar_error(f"Fallo al confirmar reserva [{self.id_reserva}]", error)
-            raise
-        except Exception as error:
-            registrar_error(f"Error calculando reserva [{self.id_reserva}]", error)
-            raise ReservaError(
-                "No fue posible calcular el costo de la reserva.",
-                codigo_error="ERR_RESERVA_COSTO",
-            ) from error
-        else:
-            registrar_info(
-                f"Reserva [{self.id_reserva}] CONFIRMADA. Total: ${self._costo_total:,.2f}"
-            )
-            return self._costo_total
-        finally:
-            registrar_info(
-                f"[AUDITORIA] Confirmacion [{self.id_reserva}]: "
-                f"{'EXITOSA' if operacion_exitosa else 'FALLIDA'}"
-            )
-
-    def cancelar(self, motivo: str = "Solicitud del cliente") -> None:
-        """Permite cancelar reservas pendientes o confirmadas."""
-        try:
-            if self._estado in (EstadoReserva.CANCELADA, EstadoReserva.PROCESADA):
-                raise ReservaError(
-                    f"No se puede cancelar reserva en estado {self._estado.value}.",
-                    codigo_error="ERR_ESTADO_RESERVA",
-                )
-            if not isinstance(motivo, str) or not motivo.strip():
-                raise ReservaError("El motivo de cancelacion debe ser texto no vacio.")
-            self._estado = EstadoReserva.CANCELADA
-            registrar_advertencia(
-                f"Reserva [{self.id_reserva}] CANCELADA. Motivo: {motivo.strip()}"
-            )
-        except ReservaError as error:
-            registrar_error(f"Fallo al cancelar [{self.id_reserva}]", error)
+    try:
+        import core.base  # noqa: F401
+        import core.exceptions  # noqa: F401
+        import core.logger  # noqa: F401
+        import models.cliente  # noqa: F401
+        import models.servicios  # noqa: F401
+        return False
+    except ModuleNotFoundError as exc:
+        # Si el error pertenece a una dependencia interna inesperada, no lo ocultamos.
+        faltante = exc.name or ""
+        permitidos = {"core", "core.base", "core.exceptions", "core.logger",
+                      "models", "models.cliente", "models.servicios"}
+        if faltante not in permitidos:
             raise
 
-    def procesar(self) -> None:
-        """Solo permite procesar una reserva confirmada."""
-        if self._estado != EstadoReserva.CONFIRMADA:
-            error = ReservaError(
-                f"No se puede procesar reserva en estado {self._estado.value}.",
-                codigo_error="ERR_ESTADO_RESERVA",
-            )
-            registrar_error(f"Fallo al procesar [{self.id_reserva}]", error)
-            raise error
-        self._estado = EstadoReserva.PROCESADA
-        registrar_info(f"Reserva [{self.id_reserva}] PROCESADA.")
+    from abc import ABC, abstractmethod
 
-    def obtener_detalle(self) -> dict:
-        return {
-            "id_reserva": self.id_reserva,
-            "cliente": self.cliente.nombre,
-            "cedula": self.cliente.cedula,
-            "servicio": self.servicio.nombre,
-            "fecha_evento": self.fecha_evento,
-            "duracion": self.duracion,
-            "notas": self.notas,
-            "estado": self.estado.value,
-            "costo_total": self.costo_total,
-        }
+    # Si algunos módulos reales ya se importaron, no mezclamos versiones reales
+    # y simuladas sin control: eliminamos únicamente los módulos externos de esta prueba.
+    for nombre in ("core.base", "core.exceptions", "core.logger",
+                   "models.cliente", "models.servicios"):
+        sys.modules.pop(nombre, None)
 
-    def __str__(self) -> str:
-        return (
-            f"Reserva #{self.id_reserva} | Cliente: {self.cliente.nombre} | "
-            f"Servicio: {self.servicio.nombre} | Fecha: {self.fecha_evento} | "
-            f"Duracion: {self.duracion:g} | Estado: {self.estado.value} | "
-            f"Total: ${self.costo_total:,.2f}"
+    core_pkg = sys.modules.get("core")
+    if core_pkg is None:
+        core_pkg = types.ModuleType("core")
+        core_pkg.__path__ = [str(RAIZ_PROYECTO / "core")]
+        sys.modules["core"] = core_pkg
+
+    models_pkg = sys.modules.get("models")
+    if models_pkg is None:
+        models_pkg = types.ModuleType("models")
+        models_pkg.__path__ = [str(RAIZ_PROYECTO / "models")]
+        sys.modules["models"] = models_pkg
+
+    core_base = types.ModuleType("core.base")
+    core_exc = types.ModuleType("core.exceptions")
+    core_log = types.ModuleType("core.logger")
+    models_cli = types.ModuleType("models.cliente")
+    models_srv = types.ModuleType("models.servicios")
+
+    class EntidadBase(ABC):
+        def __init__(self, id_entidad):
+            self._id_entidad = str(id_entidad).strip()
+            self._fecha_registro = datetime.now()
+            self._activo = True
+
+        @property
+        def id_entidad(self):
+            return self._id_entidad
+
+        @abstractmethod
+        def obtener_detalle(self):
+            raise NotImplementedError
+
+    class SoftwareFJError(Exception):
+        def __init__(self, mensaje, codigo_error="ERR_SISTEMA"):
+            super().__init__(mensaje)
+            self.codigo_error = codigo_error
+            self.mensaje = mensaje
+
+        def __str__(self):
+            return f"[{self.codigo_error}] {self.mensaje}"
+
+    class ReservaError(SoftwareFJError):
+        def __init__(self, mensaje, codigo_error="ERR_RESERVA"):
+            super().__init__(mensaje, codigo_error)
+
+    class EstadoReservaInvalidoError(ReservaError):
+        def __init__(self, mensaje):
+            super().__init__(mensaje, codigo_error="ERR_ESTADO_INVALIDO")
+
+    class OperacionNoPermitidaError(SoftwareFJError):
+        def __init__(self, mensaje):
+            super().__init__(mensaje, codigo_error="ERR_OPERACION_NO_PERMITIDA")
+
+    class Cliente(EntidadBase):
+        def __init__(self, cedula, nombre, email, telefono, es_vip=False):
+            super().__init__(cedula)
+            self.cedula = cedula
+            self.nombre = nombre
+            self.email = email
+            self.telefono = telefono
+            self.es_vip = es_vip
+
+        def obtener_detalle(self):
+            return {"cedula": self.cedula, "nombre": self.nombre,
+                    "es_vip": self.es_vip}
+
+    class Servicio(EntidadBase):
+        def __init__(self, codigo_servicio, nombre, tarifa_base):
+            super().__init__(codigo_servicio)
+            self.codigo_servicio = codigo_servicio
+            self.nombre = nombre
+            self.tarifa_base = float(tarifa_base)
+
+        def calcular_costo(self, descuento=0.0, impuesto=0.19, **kwargs):
+            subtotal = self.tarifa_base * (1.0 - min(max(descuento, 0.0), 1.0))
+            return round(subtotal * (1.0 + impuesto), 2)
+
+        def obtener_detalle(self):
+            return {"codigo": self.codigo_servicio, "nombre": self.nombre}
+
+    core_base.EntidadBase = EntidadBase
+    core_exc.SoftwareFJError = SoftwareFJError
+    core_exc.ReservaError = ReservaError
+    core_exc.EstadoReservaInvalidoError = EstadoReservaInvalidoError
+    core_exc.OperacionNoPermitidaError = OperacionNoPermitidaError
+    core_log.registrar_info = lambda msg: None
+    core_log.registrar_advertencia = lambda msg: None
+    core_log.registrar_error = lambda msg, exc=None: None
+    models_cli.Cliente = Cliente
+    models_srv.Servicio = Servicio
+
+    for pkg, name, module in (
+        (core_pkg, "base", core_base), (core_pkg, "exceptions", core_exc),
+        (core_pkg, "logger", core_log), (models_pkg, "cliente", models_cli),
+        (models_pkg, "servicios", models_srv),
+    ):
+        sys.modules[module.__name__] = module
+        setattr(pkg, name, module)
+    return True
+
+
+_USANDO_STUBS = _asegurar_dependencias_en_rama_aislada()
+
+from core.exceptions import (  # noqa: E402
+    EstadoReservaInvalidoError, OperacionNoPermitidaError, ReservaError,
+)
+from models.cliente import Cliente  # noqa: E402
+from models.reserva import EstadoReserva, Reserva  # noqa: E402
+from models.servicios import Servicio  # noqa: E402
+
+if not _USANDO_STUBS:
+    from models.servicios import ReservaSala  # noqa: E402
+
+
+def _crear_servicio_prueba():
+    if _USANDO_STUBS:
+        return Servicio("SALA-T1", "Sala Pruebas", 100000.0)
+    return ReservaSala(
+        codigo_servicio="SALA-T1", nombre="Sala Pruebas",
+        tarifa_base_hora=50000.0, capacidad_maxima=10, horas=2,
+    )
+
+
+def _fecha_futura(dias, hora):
+    """Fecha válida futura en el formato exigido por Reserva."""
+    return f"{(datetime.now() + timedelta(days=dias)):%Y-%m-%d} {hora}"
+
+
+class TestModuloReservas(unittest.TestCase):
+    """Pruebas de creación, validaciones y transiciones de estado."""
+
+    def setUp(self):
+        self.cliente_normal = Cliente(
+            "1015248901", "Ana Maria Perez", "ana.perez@correo.com",
+            "3105551234", es_vip=False,
         )
+        self.cliente_vip = Cliente(
+            "1020304050", "Carlos Mendoza", "carlos@empresa.com",
+            "3158889900", es_vip=True,
+        )
+        self.servicio = _crear_servicio_prueba()
+
+    def test_01_creacion_estado_pendiente_y_fecha_valida(self):
+        fecha = _fecha_futura(2, "10:00")
+        reserva = Reserva("RES-001", self.cliente_normal, self.servicio,
+                          fecha, "Prueba")
+        self.assertEqual(reserva.estado, EstadoReserva.PENDIENTE)
+        self.assertEqual(reserva.fecha_evento, fecha)
+        self.assertEqual(reserva.costo_total, 0.0)
+
+    def test_02_rechazo_fecha_invalida_o_inexistente(self):
+        with self.assertRaises(ReservaError):
+            Reserva("RES-BAD", self.cliente_normal, self.servicio,
+                    "2026-02-30 10:00")
+        with self.assertRaises(ReservaError):
+            Reserva("RES-EMPTY", self.cliente_normal, self.servicio, "")
+
+    def test_03_confirmacion_vip_y_reconfirmacion_bloqueada(self):
+        reserva = Reserva("RES-002", self.cliente_vip, self.servicio,
+                          _fecha_futura(2, "14:00"))
+        total = reserva.confirmar()
+        self.assertEqual(reserva.estado, EstadoReserva.CONFIRMADA)
+        # Tarifa base 100000, descuento VIP 10 % e IVA 19 %.
+        self.assertAlmostEqual(total, 107100.0, places=2)
+        with self.assertRaises(EstadoReservaInvalidoError):
+            reserva.confirmar()
+
+    def test_04_cancelacion_y_bloqueo_cancelacion_redundante(self):
+        reserva = Reserva("RES-003", self.cliente_normal, self.servicio,
+                          _fecha_futura(3, "09:00"))
+        reserva.cancelar("Cambio de agenda")
+        self.assertEqual(reserva.estado, EstadoReserva.CANCELADA)
+        with self.assertRaises(EstadoReservaInvalidoError):
+            reserva.cancelar("Segundo intento")
+
+    def test_05_procesamiento_y_bloqueo_anulacion_posterior(self):
+        reserva = Reserva("RES-004", self.cliente_normal, self.servicio,
+                          _fecha_futura(4, "16:00"))
+        with self.assertRaises(EstadoReservaInvalidoError):
+            reserva.procesar()
+        reserva.confirmar()
+        reserva.procesar()
+        self.assertEqual(reserva.estado, EstadoReserva.PROCESADA)
+        with self.assertRaises(OperacionNoPermitidaError):
+            reserva.cancelar("Intento tardio")
+
+
+if __name__ == "__main__":
+    unittest.main()
